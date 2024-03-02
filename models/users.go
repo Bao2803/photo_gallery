@@ -213,6 +213,19 @@ func (uv *userValidator) hmacRemember(user *User) error {
 	return nil
 }
 
+func (uv *userValidator) setRememberIfUnset(user *User) error {
+	if user.Remember != "" {
+		return nil
+	}
+
+	token, err := rand.RememberToken()
+	if err != nil {
+		return err
+	}
+	user.Remember = token
+	return nil
+}
+
 // ByID will look up a user with the provided ID.
 // If the user is found, we will return a nil error.
 // If the user is not found, we will return ErrNotFound.
@@ -264,15 +277,10 @@ func (ug *userGorm) ByRemember(rememberHash string) (*User, error) {
 
 // Create will 'normalize' the input user with a hash password and a remember token.
 func (uv *userValidator) Create(user *User) error {
-	if user.Remember == "" {
-		token, err := rand.RememberToken()
-		if err != nil {
-			return err
-		}
-		user.Remember = token
-	}
-
-	err := runUserValFns(user, uv.bcryptPassword, uv.hmacRemember)
+	err := runUserValFns(user,
+		uv.bcryptPassword,
+		uv.setRememberIfUnset,
+		uv.hmacRemember)
 	if err != nil {
 		return err
 	}
@@ -287,7 +295,7 @@ func (ug *userGorm) Create(user *User) error {
 
 // Update will hash a remember token if it is provided.
 func (uv *userValidator) Update(user *User) error {
-	err := runUserValFns(user, uv.bcryptPassword)
+	err := runUserValFns(user, uv.bcryptPassword, uv.hmacRemember)
 	if err != nil {
 		return err
 	}
