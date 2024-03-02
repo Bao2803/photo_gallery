@@ -226,6 +226,15 @@ func (uv *userValidator) setRememberIfUnset(user *User) error {
 	return nil
 }
 
+func (uv *userValidator) idGreaterThan(n uint) userValFn {
+	return userValFn(func(user *User) error {
+		if user.ID <= n {
+			return ErrInvalidID
+		}
+		return nil
+	})
+}
+
 // ByID will look up a user with the provided ID.
 // If the user is found, we will return a nil error.
 // If the user is not found, we will return ErrNotFound.
@@ -309,8 +318,11 @@ func (ug *userGorm) Update(user *User) error {
 
 // Delete will delete the user with the provided ID
 func (uv *userValidator) Delete(id uint) error {
-	if id == 0 {
-		return ErrInvalidID
+	var user User
+	user.ID = id
+	err := runUserValFns(&user, uv.idGreaterThan(0))
+	if err != nil {
+		return err
 	}
 	return uv.UserDB.Delete(id)
 }
