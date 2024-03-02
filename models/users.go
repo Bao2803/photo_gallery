@@ -176,6 +176,34 @@ func first(db *gorm.DB, dst interface{}) error {
 	return err
 }
 
+type userValFn func(*User) error
+
+func runUserValFns(user *User, fns ...userValFn) error {
+	for _, fn := range fns {
+		if err := fn(user); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// bcryptPassword will hash a user's password with an app-wide pepper and bcrypt, which salts for us.
+func (uv *userValidator) bcryptPassword(user *User) error {
+	// No password to hash, exit early
+	if user.Password == "" {
+		return nil
+	}
+
+	pwBytes := []byte(user.Password + userPwPepper)
+	hashedBytes, err := bcrypt.GenerateFromPassword(pwBytes, bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	user.PasswordHash = string(hashedBytes)
+	user.Password = ""
+	return nil
+}
+
 // ByID will look up a user with the provided ID.
 // If the user is found, we will return a nil error.
 // If the user is not found, we will return ErrNotFound.
@@ -222,13 +250,9 @@ func (ug *userGorm) ByRemember(rememberHash string) (*User, error) {
 
 // Create will 'normalize' the input user with a hash password and a remember token.
 func (uv *userValidator) Create(user *User) error {
-	pwBytes := []byte(user.Password + userPwPepper)
-	hashedBytes, err := bcrypt.GenerateFromPassword(pwBytes, bcrypt.DefaultCost)
-	if err != nil {
+	if err := runUserValFns(user, uv.bcryptPassword); err != nil {
 		return err
 	}
-	user.PasswordHash = string(hashedBytes)
-	user.Password = ""
 
 	if user.Remember == "" {
 		token, err := rand.RememberToken()
@@ -249,6 +273,9 @@ func (ug *userGorm) Create(user *User) error {
 
 // Update will hash a remember token if it is provided.
 func (uv *userValidator) Update(user *User) error {
+	if err := runUserValFns(user, uv.bcryptPassword); err != nil {
+		return err
+	}
 	if user.Remember != "" {
 		user.RememberHash = uv.hmac.Hash(user.Remember)
 	}
