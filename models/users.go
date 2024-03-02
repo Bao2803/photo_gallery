@@ -16,11 +16,17 @@ var (
 	// ErrNotFound is returned when a resource cannot be found in the database.
 	ErrNotFound = errors.New("models: resource not found")
 
-	// ErrInvalidID is returned when an invalid ID is provided to a method like Delete.
-	ErrInvalidID = errors.New("models: ID provided was invalid")
+	// ErrIDInvalid is returned when an invalid ID is provided to a method like Delete.
+	ErrIDInvalid = errors.New("models: ID provided was invalid")
 
-	// ErrInvalidPassword is returned when an invalid password is used when attempting to authenticate a user.
-	ErrInvalidPassword = errors.New("models: incorrect password provided")
+	// ErrPasswordRequired is returned when a creat is attempted without a user password provided.
+	ErrPasswordRequired = errors.New("models: password is required")
+
+	// ErrPasswordTooShort is returned when a user tries to set a password that is less than 8 characters long
+	ErrPasswordTooShort = errors.New("models: password must be at least 8 characters long")
+
+	// ErrPasswordIncorrect is returned when an invalid password is used when attempting to authenticate a user.
+	ErrPasswordIncorrect = errors.New("models: incorrect password provided")
 
 	// ErrEmailRequired is returned when an email address is not provided when creating a user.
 	ErrEmailRequired = errors.New("models: email address is required")
@@ -82,7 +88,7 @@ type UserService interface {
 	// password are correct. If they are correct, the user
 	// corresponding to that email will be returned. Otherwise,
 	// You will receive either:
-	// ErrNotFound, ErrInvalidPassword, or another error if
+	// ErrNotFound, ErrPasswordIncorrect, or another error if
 	// something goes wrong.
 	Authenticate(email, password string) (*User, error)
 	UserDB
@@ -139,7 +145,7 @@ func newUserGorm(connectionInfo string) (*userGorm, error) {
 // Authenticate can be used to authenticate a user with the
 // provided email address and password.
 // If the email address provided is invalid, this will return nil, ErrNotFound
-// If the password provided is invalid, this will return nil, ErrInvalidPassword
+// If the password provided is invalid, this will return nil, ErrPasswordIncorrect
 // If the email and password are both valid, this will return user, nil
 // Otherwise if another error is encountered this will return nil, error
 func (us *userService) Authenticate(email, password string) (*User, error) {
@@ -153,7 +159,7 @@ func (us *userService) Authenticate(email, password string) (*User, error) {
 	case err == nil:
 		return foundUser, nil
 	case errors.Is(err, bcrypt.ErrMismatchedHashAndPassword):
-		return nil, ErrInvalidPassword
+		return nil, ErrPasswordIncorrect
 	default:
 		return nil, err
 	}
@@ -245,7 +251,7 @@ func (uv *userValidator) setRememberIfUnset(user *User) error {
 func (uv *userValidator) idGreaterThan(n uint) userValFn {
 	return func(user *User) error {
 		if user.ID <= n {
-			return ErrInvalidID
+			return ErrIDInvalid
 		}
 		return nil
 	}
@@ -287,6 +293,30 @@ func (uv *userValidator) emailIsAvail(user *User) error {
 	// If not the same user, email is taken
 	if user.ID != existing.ID {
 		return ErrEmailTaken
+	}
+	return nil
+}
+
+func (uv *userValidator) passwordMinLength(user *User) error {
+	if user.Password == "" {
+		return nil
+	}
+	if len(user.Password) < 8 {
+		return ErrPasswordTooShort
+	}
+	return nil
+}
+
+func (uv *userValidator) passwordRequired(user *User) error {
+	if user.Password == "" {
+		return ErrPasswordRequired
+	}
+	return nil
+}
+
+func (uv *userValidator) passwordHashRequired(user *User) error {
+	if user.PasswordHash == "" {
+		return ErrPasswordRequired
 	}
 	return nil
 }
@@ -354,9 +384,14 @@ func (ug *userGorm) ByRemember(rememberHash string) (*User, error) {
 // Create will 'normalize' the input user with a hash password and a remember token.
 func (uv *userValidator) Create(user *User) error {
 	err := runUserValFns(user,
+		uv.passwordRequired,
+		uv.passwordMinLength,
 		uv.bcryptPassword,
+		uv.passwordHashRequired,
+
 		uv.setRememberIfUnset,
 		uv.hmacRemember,
+
 		uv.normalizeEmail,
 		uv.requireEmail,
 		uv.emailFormat,
@@ -376,8 +411,12 @@ func (ug *userGorm) Create(user *User) error {
 // Update will hash a remember token if it is provided.
 func (uv *userValidator) Update(user *User) error {
 	err := runUserValFns(user,
+		uv.passwordMinLength,
 		uv.bcryptPassword,
+		uv.passwordHashRequired,
+
 		uv.hmacRemember,
+
 		uv.normalizeEmail,
 		uv.requireEmail,
 		uv.emailFormat,
