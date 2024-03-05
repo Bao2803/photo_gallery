@@ -66,6 +66,13 @@ type View struct {
 }
 
 func (v *View) Render(w http.ResponseWriter, data interface{}) error {
+	switch data.(type) {
+	case Data:
+	default:
+		data = Data{
+			Yield: data,
+		}
+	}
 	return v.Template.ExecuteTemplate(w, v.Layout, data)
 }
 
