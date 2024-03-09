@@ -55,6 +55,7 @@ func main() {
 	// Gallery routes
 	r.Handle("/galleries/new", newGallery).Methods("GET")
 	r.HandleFunc("/galleries", createGallery).Methods("POST")
+	r.HandleFunc("/galleries/{id:[0-9]+}", galleriesC.Show).Methods("GET")
 
 	// Misc
 	r.Handle("/contact", staticC.Contact).Methods("GET")
