@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bao2803/photo_gallery/middleware"
 	"bao2803/photo_gallery/models"
 	"fmt"
 	"net/http"
@@ -35,6 +36,12 @@ func main() {
 	galleriesC := controllers.NewGalleries(services.Gallery)
 	staticC := controllers.NewStatic()
 
+	requireUserMw := middleware.RequireUser{
+		UserService: services.User,
+	}
+	newGallery := requireUserMw.Apply(galleriesC.New)
+	createGallery := requireUserMw.ApplyFn(galleriesC.Create)
+
 	r := mux.NewRouter()
 
 	// User routes
@@ -46,8 +53,8 @@ func main() {
 	r.HandleFunc("/cookietest", usersC.CookieTest).Methods("GET")
 
 	// Gallery routes
-	r.Handle("/galleries/new", galleriesC.New).Methods("GET")
-	r.HandleFunc("/galleries", galleriesC.Create).Methods("POST")
+	r.Handle("/galleries/new", newGallery).Methods("GET")
+	r.HandleFunc("/galleries", createGallery).Methods("POST")
 
 	// Misc
 	r.Handle("/contact", staticC.Contact).Methods("GET")

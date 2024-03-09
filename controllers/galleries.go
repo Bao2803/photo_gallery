@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"bao2803/photo_gallery/context"
 	"bao2803/photo_gallery/models"
 	"bao2803/photo_gallery/views"
 	"fmt"
@@ -9,14 +10,16 @@ import (
 
 func NewGalleries(gs models.GalleryService) *Galleries {
 	return &Galleries{
-		New: views.NewView("bootstrap", "galleries/new"),
-		gs:  gs,
+		New:      views.NewView("bootstrap", "galleries/new"),
+		ShowView: views.NewView("bootstrap", "galleries/show"),
+		gs:       gs,
 	}
 }
 
 type Galleries struct {
-	New *views.View
-	gs  models.GalleryDB
+	New      *views.View
+	ShowView *views.View
+	gs       models.GalleryDB
 }
 
 type GalleryForm struct {
@@ -32,8 +35,11 @@ func (g *Galleries) Create(w http.ResponseWriter, r *http.Request) {
 		g.New.Render(w, vd)
 		return
 	}
+
+	user := context.User(r.Context())
 	gallery := models.Gallery{
-		Title: form.Title,
+		Title:  form.Title,
+		UserID: user.ID,
 	}
 	if err := g.gs.Create(&gallery); err != nil {
 		vd.SetAlert(err)
