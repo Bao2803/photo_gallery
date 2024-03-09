@@ -11,52 +11,6 @@ import (
 	"strings"
 )
 
-// Errors
-var (
-	// ErrNotFound is returned when a resource cannot be found in the database.
-	ErrNotFound modelError = "models: resource not found"
-
-	// ErrIDInvalid is returned when an invalid ID is provided to a method like Delete.
-	ErrIDInvalid modelError = "models: ID provided was invalid"
-
-	// ErrPasswordRequired is returned when a creation is attempted without a user password provided.
-	ErrPasswordRequired modelError = "models: password is required"
-
-	// ErrPasswordTooShort is returned when a user tries to set a password that is less than 8 characters long
-	ErrPasswordTooShort modelError = "models: password must be at least 8 characters long"
-
-	// ErrPasswordIncorrect is returned when an invalid password is used when attempting to authenticate a user.
-	ErrPasswordIncorrect modelError = "models: incorrect password provided"
-
-	// ErrEmailRequired is returned when an email address is not provided when creating a user.
-	ErrEmailRequired modelError = "models: email address is required"
-
-	// ErrEmailInvalid is returned when an email address provided does not match any of our requirements.
-	ErrEmailInvalid modelError = "models: email address is not valid"
-
-	// ErrEmailTaken is returned when an update or create is attempt with an email address that is already in use.
-	ErrEmailTaken modelError = "models: email address is already taken"
-
-	// ErrRememberRequired is returned when a create or update is attempted without a user remember token hash
-	ErrRememberRequired modelError = "models: remember token is required"
-
-	// ErrRememberTooShort is returned when a remember token is not at least 32 bytes
-	ErrRememberTooShort modelError = "models: remember token must be at least 32 bytes"
-)
-
-type modelError string
-
-func (e modelError) Error() string {
-	return string(e)
-}
-
-func (e modelError) Public() string {
-	s := strings.Replace(string(e), "models: ", "", 1)
-	split := strings.Split(s, " ")
-	split[0] = strings.ToTitle(split[0])
-	return strings.Join(split, " ")
-}
-
 // Pepper for authentication TODO: move to config file
 var userPwPepper = "secret-random-string"
 
@@ -93,11 +47,6 @@ type UserDB interface {
 	Create(user *User) error
 	Update(user *User) error
 	Delete(id uint) error
-
-	Close() error
-
-	AutoMigrate() error
-	DestructiveReset() error
 }
 
 // UserService is a set of methods used to manipulate and
@@ -129,16 +78,13 @@ type userGorm struct {
 }
 
 // NewUserService Create a new userService with a specified connectionInfo.
-func NewUserService(connectionInfo string) (UserService, error) {
-	ug, err := newUserGorm(connectionInfo)
-	if err != nil {
-		return nil, err
-	}
+func NewUserService(db *gorm.DB) UserService {
+	ug := &userGorm{db: db}
 	hmac := hash.NewHMAC(hmacSecretKey)
 	uv := newUserValidator(ug, hmac)
 	return &userService{
 		UserDB: uv,
-	}, nil
+	}
 }
 
 func newUserValidator(udb UserDB, hmac hash.HMAC) *userValidator {
@@ -147,18 +93,6 @@ func newUserValidator(udb UserDB, hmac hash.HMAC) *userValidator {
 		hmac:       hmac,
 		emailRegex: regexp.MustCompile(`^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,16}$`),
 	}
-}
-
-// newUserGorm Create a new userGorm with a specified connectionInfo.
-func newUserGorm(connectionInfo string) (*userGorm, error) {
-	db, err := gorm.Open("postgres", connectionInfo)
-	if err != nil {
-		return nil, err
-	}
-	db.LogMode(true)
-	return &userGorm{
-		db: db,
-	}, nil
 }
 
 // Authenticate can be used to authenticate a user with the
@@ -182,28 +116,6 @@ func (us *userService) Authenticate(email, password string) (*User, error) {
 	default:
 		return nil, err
 	}
-}
-
-// Close Closes the userService database connection.
-func (ug *userGorm) Close() error {
-	return ug.db.Close()
-}
-
-// AutoMigrate will attempt to automatically migrate the users table
-func (ug *userGorm) AutoMigrate() error {
-	if err := ug.db.AutoMigrate(&User{}).Error; err != nil {
-		return err
-	}
-	return nil
-}
-
-// DestructiveReset drops the user table and rebuilds it.
-func (ug *userGorm) DestructiveReset() error {
-	err := ug.db.DropTableIfExists(&User{}).Error
-	if err != nil {
-		return err
-	}
-	return ug.AutoMigrate()
 }
 
 // first will query using the provided gorm.DB, and it will get the first item

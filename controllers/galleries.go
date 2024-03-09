@@ -1,24 +1,44 @@
 package controllers
 
 import (
-	"net/http"
-
+	"bao2803/photo_gallery/models"
 	"bao2803/photo_gallery/views"
+	"fmt"
+	"net/http"
 )
 
-func NewGalleries() *Galleries {
+func NewGalleries(gs models.GalleryService) *Galleries {
 	return &Galleries{
-		Gallery: views.NewView("bootstrap", "galleries/new"),
+		New: views.NewView("bootstrap", "galleries/new"),
+		gs:  gs,
 	}
 }
 
 type Galleries struct {
-	Gallery *views.View
+	New *views.View
+	gs  models.GalleryDB
 }
 
-func (g *Galleries) New(w http.ResponseWriter, r *http.Request) {
-	err := g.Gallery.Render(w, nil)
-	if err != nil {
-		panic(err)
+type GalleryForm struct {
+	Title string `schema:"title"`
+}
+
+// Create POST /galleries
+func (g *Galleries) Create(w http.ResponseWriter, r *http.Request) {
+	var vd views.Data
+	var form GalleryForm
+	if err := parseForm(r, &form); err != nil {
+		vd.SetAlert(err)
+		g.New.Render(w, vd)
+		return
 	}
+	gallery := models.Gallery{
+		Title: form.Title,
+	}
+	if err := g.gs.Create(&gallery); err != nil {
+		vd.SetAlert(err)
+		g.New.Render(w, vd)
+		return
+	}
+	fmt.Fprintln(w, gallery)
 }
