@@ -4,17 +4,22 @@ import (
 	"bao2803/photo_gallery/context"
 	"bao2803/photo_gallery/models"
 	"bao2803/photo_gallery/views"
-	"fmt"
+	"errors"
 	"github.com/gorilla/mux"
 	"net/http"
 	"strconv"
 )
 
-func NewGalleries(gs models.GalleryService) *Galleries {
+const (
+	ShowGallery = "show_gallery"
+)
+
+func NewGalleries(gs models.GalleryService, r *mux.Router) *Galleries {
 	return &Galleries{
 		New:      views.NewView("bootstrap", "galleries/new"),
 		ShowView: views.NewView("bootstrap", "galleries/show"),
 		gs:       gs,
+		r:        r,
 	}
 }
 
@@ -22,6 +27,7 @@ type Galleries struct {
 	New      *views.View
 	ShowView *views.View
 	gs       models.GalleryDB
+	r        *mux.Router
 }
 
 type GalleryForm struct {
@@ -48,7 +54,12 @@ func (g *Galleries) Create(w http.ResponseWriter, r *http.Request) {
 		g.New.Render(w, vd)
 		return
 	}
-	fmt.Fprintln(w, gallery)
+
+	url, err := g.r.Get(ShowGallery).URL("id", strconv.Itoa(int(gallery.ID)))
+	if err != nil {
+		http.Redirect(w, r, "/", http.StatusFound)
+	}
+	http.Redirect(w, r, url.Path, http.StatusFound)
 }
 
 // Show GET /galleries/:id
@@ -60,10 +71,16 @@ func (g *Galleries) Show(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid gallery ID", http.StatusNotFound)
 		return
 	}
-	_ = id
 
-	gallery := models.Gallery{
-		Title: "A temp fake gallery with ID: " + idStr,
+	gallery, err := g.gs.ByID(uint(id))
+	if err != nil {
+		switch {
+		case errors.Is(err, models.ErrNotFound):
+			http.Error(w, "Gallery not found", http.StatusNotFound)
+		default:
+			http.Error(w, "Whoops! Something went wrong.", http.StatusInternalServerError)
+		}
+		return
 	}
 	var vd views.Data
 	vd.Yield = gallery
