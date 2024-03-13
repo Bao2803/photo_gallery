@@ -17,7 +17,7 @@ const (
 	port     = 5432
 	user     = "bao2803"
 	password = "bao28032003"
-	dbname   = "lenslocked_dev"
+	dbname   = "photo_gallery_dev"
 )
 
 func main() {
@@ -38,13 +38,6 @@ func main() {
 	galleriesC := controllers.NewGalleries(services.Gallery, r)
 	staticC := controllers.NewStatic()
 
-	// Middlewares
-	requireUserMw := middleware.RequireUser{
-		UserService: services.User,
-	}
-	newGallery := requireUserMw.Apply(galleriesC.New)
-	createGallery := requireUserMw.ApplyFn(galleriesC.Create)
-
 	// User routes
 	r.Handle("/", staticC.Home).Methods("GET")
 	r.Handle("/login", usersC.LoginView).Methods("GET")
@@ -53,10 +46,16 @@ func main() {
 	r.HandleFunc("/signup", usersC.Create).Methods("POST")
 	r.HandleFunc("/cookietest", usersC.CookieTest).Methods("GET")
 
+	// Middlewares for gallery
+	requireUserMw := middleware.RequireUser{
+		UserService: services.User,
+	}
+
 	// Gallery routes
-	r.Handle("/galleries/new", newGallery).Methods("GET")
-	r.HandleFunc("/galleries", createGallery).Methods("POST")
+	r.Handle("/galleries/new", requireUserMw.Apply(galleriesC.New)).Methods("GET")
+	r.HandleFunc("/galleries", requireUserMw.ApplyFn(galleriesC.Create)).Methods("POST")
 	r.HandleFunc("/galleries/{id:[0-9]+}", galleriesC.Show).Methods("GET").Name(controllers.ShowGallery)
+	r.HandleFunc("/galleries/{id:[0-9]+}/edit", requireUserMw.ApplyFn(galleriesC.Edit)).Methods("GET")
 
 	// Misc
 	r.Handle("/contact", staticC.Contact).Methods("GET")
