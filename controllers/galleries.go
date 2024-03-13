@@ -5,32 +5,35 @@ import (
 	"bao2803/photo_gallery/models"
 	"bao2803/photo_gallery/views"
 	"errors"
-	"fmt"
 	"github.com/gorilla/mux"
 	"net/http"
 	"strconv"
 )
 
 const (
-	ShowGallery = "show_gallery"
+	IndexGalleries = "index_galleries"
+	ShowGallery    = "show_gallery"
+	EditGallery    = "edit_gallery"
 )
 
 func NewGalleries(gs models.GalleryService, r *mux.Router) *Galleries {
 	return &Galleries{
-		New:      views.NewView("bootstrap", "galleries/new"),
-		ShowView: views.NewView("bootstrap", "galleries/show"),
-		EditView: views.NewView("bootstrap", "galleries/edit"),
-		gs:       gs,
-		r:        r,
+		New:       views.NewView("bootstrap", "galleries/new"),
+		ShowView:  views.NewView("bootstrap", "galleries/show"),
+		EditView:  views.NewView("bootstrap", "galleries/edit"),
+		IndexView: views.NewView("bootstrap", "galleries/index"),
+		gs:        gs,
+		r:         r,
 	}
 }
 
 type Galleries struct {
-	New      *views.View
-	ShowView *views.View
-	EditView *views.View
-	gs       models.GalleryDB
-	r        *mux.Router
+	New       *views.View
+	ShowView  *views.View
+	EditView  *views.View
+	IndexView *views.View
+	gs        models.GalleryDB
+	r         *mux.Router
 }
 
 type GalleryForm struct {
@@ -58,6 +61,18 @@ func (g *Galleries) galleryByID(w http.ResponseWriter, r *http.Request) (*models
 	return gallery, nil
 }
 
+func (g *Galleries) Index(w http.ResponseWriter, r *http.Request) {
+	user := context.User(r.Context())
+	galleries, err := g.gs.ByUserID(user.ID)
+	if err != nil {
+		http.Error(w, "Something went wrong.", http.StatusInternalServerError)
+		return
+	}
+	var vd views.Data
+	vd.Yield = galleries
+	g.IndexView.Render(w, r, vd)
+}
+
 // Show GET /galleries/:id
 func (g *Galleries) Show(w http.ResponseWriter, r *http.Request) {
 	gallery, err := g.galleryByID(w, r)
@@ -66,7 +81,7 @@ func (g *Galleries) Show(w http.ResponseWriter, r *http.Request) {
 	}
 	var vd views.Data
 	vd.Yield = gallery
-	g.ShowView.Render(w, vd)
+	g.ShowView.Render(w, r, vd)
 }
 
 // Create POST /galleries
@@ -75,7 +90,7 @@ func (g *Galleries) Create(w http.ResponseWriter, r *http.Request) {
 	var form GalleryForm
 	if err := parseForm(r, &form); err != nil {
 		vd.SetAlert(err)
-		g.New.Render(w, vd)
+		g.New.Render(w, r, vd)
 		return
 	}
 
@@ -86,11 +101,11 @@ func (g *Galleries) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := g.gs.Create(&gallery); err != nil {
 		vd.SetAlert(err)
-		g.New.Render(w, vd)
+		g.New.Render(w, r, vd)
 		return
 	}
 
-	url, err := g.r.Get(ShowGallery).URL("id", strconv.Itoa(int(gallery.ID)))
+	url, err := g.r.Get(EditGallery).URL("id", strconv.Itoa(int(gallery.ID)))
 	if err != nil {
 		http.Redirect(w, r, "/", http.StatusFound)
 	}
@@ -110,7 +125,7 @@ func (g *Galleries) Edit(w http.ResponseWriter, r *http.Request) {
 	}
 	var vd views.Data
 	vd.Yield = gallery
-	g.EditView.Render(w, vd)
+	g.EditView.Render(w, r, vd)
 }
 
 // Update POST /galleries/:id/update
@@ -129,7 +144,7 @@ func (g *Galleries) Update(w http.ResponseWriter, r *http.Request) {
 	var form GalleryForm
 	if err := parseForm(r, &form); err != nil {
 		vd.SetAlert(err)
-		g.EditView.Render(w, vd)
+		g.EditView.Render(w, r, vd)
 		return
 	}
 	gallery.Title = form.Title
@@ -142,7 +157,7 @@ func (g *Galleries) Update(w http.ResponseWriter, r *http.Request) {
 			Message: "Gallery updated successfully",
 		}
 	}
-	g.EditView.Render(w, vd)
+	g.EditView.Render(w, r, vd)
 }
 
 // Delete POST /galleries/:id/delete
@@ -163,9 +178,13 @@ func (g *Galleries) Delete(w http.ResponseWriter, r *http.Request) {
 	err = g.gs.Delete(gallery.ID)
 	if err != nil {
 		vd.SetAlert(err)
-		g.EditView.Render(w, vd)
+		g.EditView.Render(w, r, vd)
 		return
 	}
-	// TODO: redirect to page that list all galleries
-	fmt.Fprintln(w, "successfully deleted!")
+	url, err := g.r.Get(IndexGalleries).URL()
+	if err != nil {
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
+	http.Redirect(w, r, url.Path, http.StatusFound)
 }

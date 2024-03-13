@@ -1,6 +1,7 @@
 package views
 
 import (
+	"bao2803/photo_gallery/context"
 	"bytes"
 	"html/template"
 	"io"
@@ -9,9 +10,9 @@ import (
 )
 
 var (
-	LayoutDir   string = "views/layouts/"
-	TemplateDir string = "views/"
-	TemplateExt string = ".gohtml"
+	LayoutDir   = "views/layouts/"
+	TemplateDir = "views/"
+	TemplateExt = ".gohtml"
 )
 
 // addTemplatePath takes in a slice of strings
@@ -67,16 +68,20 @@ type View struct {
 	Layout   string
 }
 
-func (v *View) Render(w http.ResponseWriter, data interface{}) {
-	switch data.(type) {
+func (v *View) Render(w http.ResponseWriter, r *http.Request, data interface{}) {
+	w.Header().Set("Content-Type", "text/html")
+	var vd Data
+	switch d := data.(type) {
 	case Data:
+		vd = d
 	default:
-		data = Data{
+		vd = Data{
 			Yield: data,
 		}
 	}
+	vd.User = context.User(r.Context()) // Lookup and set the user to the User field
 	var buf bytes.Buffer
-	err := v.Template.ExecuteTemplate(&buf, v.Layout, data)
+	err := v.Template.ExecuteTemplate(&buf, v.Layout, vd)
 	if err != nil {
 		http.Error(
 			w,
@@ -88,5 +93,5 @@ func (v *View) Render(w http.ResponseWriter, data interface{}) {
 }
 
 func (v *View) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	v.Render(w, nil)
+	v.Render(w, r, nil)
 }

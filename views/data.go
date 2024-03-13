@@ -1,6 +1,7 @@
 package views
 
 import (
+	"bao2803/photo_gallery/models"
 	"errors"
 	"log"
 )
@@ -8,6 +9,7 @@ import (
 // Data is the top level structure that views expect data to come in.
 type Data struct {
 	Alert *Alert
+	User  *models.User
 	Yield interface{}
 }
 
