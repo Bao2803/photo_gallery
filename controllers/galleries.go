@@ -5,8 +5,12 @@ import (
 	"bao2803/photo_gallery/models"
 	"bao2803/photo_gallery/views"
 	"errors"
+	"fmt"
 	"github.com/gorilla/mux"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 )
 
@@ -14,6 +18,10 @@ const (
 	IndexGalleries = "index_galleries"
 	ShowGallery    = "show_gallery"
 	EditGallery    = "edit_gallery"
+)
+
+const (
+	maxMultipartMem = 1 << 20 // 1 megabyte
 )
 
 func NewGalleries(gs models.GalleryService, r *mux.Router) *Galleries {
@@ -187,4 +195,71 @@ func (g *Galleries) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, url.Path, http.StatusFound)
+}
+
+// ImageUpload POST /galleries/:id/images
+func (g *Galleries) ImageUpload(w http.ResponseWriter, r *http.Request) {
+	// Lookup the gallery
+	gallery, err := g.galleryByID(w, r)
+	if err != nil {
+		return
+	}
+	// Verify user permission
+	user := context.User(r.Context())
+	if gallery.UserID != user.ID {
+		http.Error(w, "You do not have permission to edit this gallery", http.StatusForbidden)
+		return
+	}
+	var vd views.Data
+	vd.Yield = gallery
+	// Parse Images
+	err = r.ParseMultipartForm(maxMultipartMem)
+	if err != nil {
+		vd.SetAlert(err)
+		g.EditView.Render(w, r, vd)
+		return
+	}
+	// Create directory to store images
+	galleryPath := filepath.Join("images", "galleries", fmt.Sprintf("%v", gallery.ID))
+	err = os.MkdirAll(galleryPath, 0755)
+	if err != nil {
+		vd.SetAlert(err)
+		g.EditView.Render(w, r, vd)
+		return
+	}
+	// Process files
+	files := r.MultipartForm.File["images"]
+	for _, f := range files {
+		func() { // Silence loop defer warning -> without this, ALL defer happens after ALL iteration
+			// Open individual file
+			file, err := f.Open()
+			if err != nil {
+				vd.SetAlert(err)
+				g.EditView.Render(w, r, vd)
+				return
+			}
+			defer file.Close()
+			// Create a destination file in system
+			dst, err := os.Create(filepath.Join(galleryPath, f.Filename))
+			if err != nil {
+				vd.SetAlert(err)
+				g.EditView.Render(w, r, vd)
+				return
+			}
+			defer dst.Close()
+			// Copy uploaded file data to the destination file
+			_, err = io.Copy(dst, file)
+			if err != nil {
+				vd.SetAlert(err)
+				g.EditView.Render(w, r, vd)
+				return
+			}
+		}()
+	}
+	// Success
+	vd.Alert = &views.Alert{
+		Level:   views.AlertLvlSuccess,
+		Message: "Images successfully uploaded!",
+	}
+	g.EditView.Render(w, r, vd)
 }
