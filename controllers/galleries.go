@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/gorilla/mux"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -24,13 +23,14 @@ const (
 	maxMultipartMem = 1 << 20 // 1 megabyte
 )
 
-func NewGalleries(gs models.GalleryService, r *mux.Router) *Galleries {
+func NewGalleries(gs models.GalleryService, is models.ImageService, r *mux.Router) *Galleries {
 	return &Galleries{
 		New:       views.NewView("bootstrap", "galleries/new"),
 		ShowView:  views.NewView("bootstrap", "galleries/show"),
 		EditView:  views.NewView("bootstrap", "galleries/edit"),
 		IndexView: views.NewView("bootstrap", "galleries/index"),
 		gs:        gs,
+		is:        is,
 		r:         r,
 	}
 }
@@ -41,6 +41,7 @@ type Galleries struct {
 	EditView  *views.View
 	IndexView *views.View
 	gs        models.GalleryDB
+	is        models.ImageService
 	r         *mux.Router
 }
 
@@ -48,7 +49,8 @@ type GalleryForm struct {
 	Title string `schema:"title"`
 }
 
-func (g *Galleries) galleryByID(w http.ResponseWriter, r *http.Request) (*models.Gallery, error) {
+func (g *Galleries) galleryByID(w http.ResponseWriter, r *http.Request) (*models.Galleries, error) {
+	// Getting gallery's id
 	vars := mux.Vars(r)
 	idStr := vars["id"]
 	id, err := strconv.Atoi(idStr)
@@ -56,16 +58,20 @@ func (g *Galleries) galleryByID(w http.ResponseWriter, r *http.Request) (*models
 		http.Error(w, "Invalid gallery ID", http.StatusNotFound)
 		return nil, err
 	}
+	// Retrieving corresponding gallery from DB
 	gallery, err := g.gs.ByID(uint(id))
 	if err != nil {
 		switch {
 		case errors.Is(err, models.ErrNotFound):
-			http.Error(w, "Gallery not found", http.StatusNotFound)
+			http.Error(w, "Galleries not found", http.StatusNotFound)
 		default:
 			http.Error(w, "Whoops! Something went wrong.", http.StatusInternalServerError)
 		}
 		return nil, err
 	}
+	// Populated gallery with its images' paths
+	images, _ := g.is.ByGalleryID(gallery.ID)
+	gallery.Images = images
 	return gallery, nil
 }
 
@@ -103,7 +109,7 @@ func (g *Galleries) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user := context.User(r.Context())
-	gallery := models.Gallery{
+	gallery := models.Galleries{
 		Title:  form.Title,
 		UserID: user.ID,
 	}
@@ -162,7 +168,7 @@ func (g *Galleries) Update(w http.ResponseWriter, r *http.Request) {
 	} else {
 		vd.Alert = &views.Alert{
 			Level:   views.AlertLvlSuccess,
-			Message: "Gallery updated successfully",
+			Message: "Galleries updated successfully",
 		}
 	}
 	g.EditView.Render(w, r, vd)
@@ -239,16 +245,8 @@ func (g *Galleries) ImageUpload(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			defer file.Close()
-			// Create a destination file in system
-			dst, err := os.Create(filepath.Join(galleryPath, f.Filename))
-			if err != nil {
-				vd.SetAlert(err)
-				g.EditView.Render(w, r, vd)
-				return
-			}
-			defer dst.Close()
-			// Copy uploaded file data to the destination file
-			_, err = io.Copy(dst, file)
+			// Create file in filesystem
+			err = g.is.Create(gallery.ID, file, f.Filename)
 			if err != nil {
 				vd.SetAlert(err)
 				g.EditView.Render(w, r, vd)
@@ -262,4 +260,43 @@ func (g *Galleries) ImageUpload(w http.ResponseWriter, r *http.Request) {
 		Message: "Images successfully uploaded!",
 	}
 	g.EditView.Render(w, r, vd)
+}
+
+// ImageDelete POST /galleries/:id/images/:filename/delete
+func (g *Galleries) ImageDelete(w http.ResponseWriter, r *http.Request) {
+	// Lookup the gallery
+	gallery, err := g.galleryByID(w, r)
+	if err != nil {
+		return
+	}
+	// Verify user permission
+	user := context.User(r.Context())
+	if gallery.UserID != user.ID {
+		http.Error(w, "You do not have permission to edit this gallery", http.StatusForbidden)
+		return
+	}
+	// Get filename from web request path
+	filename := mux.Vars(r)["filename"]
+	// Build the image model
+	i := models.Image{
+		GalleryID: gallery.ID,
+		Filename:  filename,
+	}
+	// Delete the image
+	err = g.is.Delete(&i)
+	if err != nil {
+		// Failure, rendering error widget
+		var vd views.Data
+		vd.Yield = gallery
+		vd.SetAlert(err)
+		g.EditView.Render(w, r, vd)
+		return
+	}
+	// Success, redirect user to edit gallery page
+	url, err := g.r.Get(EditGallery).URL("id", fmt.Sprintf("%v", gallery.ID))
+	if err != nil {
+		http.Redirect(w, r, "/galleries", http.StatusFound)
+		return
+	}
+	http.Redirect(w, r, url.Path, http.StatusFound)
 }

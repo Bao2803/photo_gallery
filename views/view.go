@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"html/template"
 	"io"
+	"log"
 	"net/http"
 	"path/filepath"
 )
@@ -88,6 +89,8 @@ func (v *View) Render(w http.ResponseWriter, r *http.Request, data interface{}) 
 			"Something went wrong. If the problem persists, please email support@photo_gallery.com",
 			http.StatusInternalServerError,
 		)
+		log.Println(err)
+		return
 	}
 	_, _ = io.Copy(w, &buf)
 }

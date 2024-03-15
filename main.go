@@ -35,7 +35,7 @@ func main() {
 
 	// Controllers
 	usersC := controllers.NewUsers(services.User)
-	galleriesC := controllers.NewGalleries(services.Gallery, r)
+	galleriesC := controllers.NewGalleries(services.Gallery, services.Image, r)
 	staticC := controllers.NewStatic()
 
 	// User routes
@@ -50,18 +50,29 @@ func main() {
 	userMw := middleware.User{UserService: services.User}
 	requireUserMw := middleware.RequireUser{}
 
-	// Gallery routes
-	r.Handle("/galleries/new", requireUserMw.Apply(galleriesC.New)).Methods("GET")
+	// Galleries routes
+	r.Handle("/galleries/new", requireUserMw.Apply(galleriesC.New)).
+		Methods("GET")
 	r.HandleFunc("/galleries", requireUserMw.ApplyFn(galleriesC.Index)).
 		Methods("GET").Name(controllers.IndexGalleries)
 	r.HandleFunc("/galleries/{id:[0-9]+}", galleriesC.Show).
 		Methods("GET").Name(controllers.ShowGallery)
-	r.HandleFunc("/galleries", requireUserMw.ApplyFn(galleriesC.Create)).Methods("POST")
+	r.HandleFunc("/galleries", requireUserMw.ApplyFn(galleriesC.Create)).
+		Methods("POST")
 	r.HandleFunc("/galleries/{id:[0-9]+}/edit", requireUserMw.ApplyFn(galleriesC.Edit)).
 		Methods("GET").Name(controllers.EditGallery)
-	r.HandleFunc("/galleries/{id:[0-9]+}/update", requireUserMw.ApplyFn(galleriesC.Update)).Methods("POST")
-	r.HandleFunc("/galleries/{id:[0-9]+}/delete", requireUserMw.ApplyFn(galleriesC.Delete)).Methods("POST")
-	r.HandleFunc("/galleries/{id:[0-9]+}/images", requireUserMw.ApplyFn(galleriesC.ImageUpload)).Methods("POST")
+	r.HandleFunc("/galleries/{id:[0-9]+}/update", requireUserMw.ApplyFn(galleriesC.Update)).
+		Methods("POST")
+	r.HandleFunc("/galleries/{id:[0-9]+}/delete", requireUserMw.ApplyFn(galleriesC.Delete)).
+		Methods("POST")
+
+	// Images routes
+	imageHandler := http.FileServer(http.Dir("./images/"))
+	r.PathPrefix("/images/").Handler(http.StripPrefix("/images/", imageHandler))
+	r.HandleFunc("/galleries/{id:[0-9]+}/images", requireUserMw.ApplyFn(galleriesC.ImageUpload)).
+		Methods("POST")
+	r.HandleFunc("/galleries/{id:[0-9]+}/images/{filename}/delete", requireUserMw.ApplyFn(galleriesC.ImageDelete)).
+		Methods("POST")
 
 	// Misc
 	r.Handle("/contact", staticC.Contact).Methods("GET")
