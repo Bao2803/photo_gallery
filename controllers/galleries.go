@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/gorilla/mux"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -55,7 +56,7 @@ func (g *Galleries) galleryByID(w http.ResponseWriter, r *http.Request) (*models
 	idStr := vars["id"]
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
-		http.Error(w, "Invalid gallery ID", http.StatusNotFound)
+		handleUnknownError(err, w, "Invalid gallery ID", http.StatusNotFound)
 		return nil, err
 	}
 	// Retrieving corresponding gallery from DB
@@ -63,9 +64,9 @@ func (g *Galleries) galleryByID(w http.ResponseWriter, r *http.Request) (*models
 	if err != nil {
 		switch {
 		case errors.Is(err, models.ErrNotFound):
-			http.Error(w, "Galleries not found", http.StatusNotFound)
+			handleUnknownError(err, w, "Galleries not found", http.StatusNotFound)
 		default:
-			http.Error(w, "Whoops! Something went wrong.", http.StatusInternalServerError)
+			handleUnknownError(err, w, "Whoops! Something went wrong.", http.StatusInternalServerError)
 		}
 		return nil, err
 	}
@@ -79,7 +80,7 @@ func (g *Galleries) Index(w http.ResponseWriter, r *http.Request) {
 	user := context.User(r.Context())
 	galleries, err := g.gs.ByUserID(user.ID)
 	if err != nil {
-		http.Error(w, "Something went wrong.", http.StatusInternalServerError)
+		handleUnknownError(err, w, "Something went wrong.", http.StatusInternalServerError)
 		return
 	}
 	var vd views.Data
@@ -134,7 +135,7 @@ func (g *Galleries) Edit(w http.ResponseWriter, r *http.Request) {
 	}
 	user := context.User(r.Context())
 	if gallery.UserID != user.ID {
-		http.Error(w, "You do not have permission to edit this gallery", http.StatusForbidden)
+		handleUnknownError(err, w, "You do not have permission to edit this gallery", http.StatusForbidden)
 		return
 	}
 	var vd views.Data
@@ -150,7 +151,7 @@ func (g *Galleries) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	user := context.User(r.Context())
 	if gallery.UserID != user.ID {
-		http.Error(w, "You do not have permission to edit this gallery", http.StatusForbidden)
+		handleUnknownError(err, w, "You do not have permission to edit this gallery", http.StatusForbidden)
 		return
 	}
 	var vd views.Data
@@ -184,7 +185,7 @@ func (g *Galleries) Delete(w http.ResponseWriter, r *http.Request) {
 	// Verify user permission
 	user := context.User(r.Context())
 	if gallery.UserID != user.ID {
-		http.Error(w, "You do not have permission to edit this gallery", http.StatusForbidden)
+		handleUnknownError(err, w, "You do not have permission to edit this gallery", http.StatusForbidden)
 		return
 	}
 	// Delete
@@ -213,7 +214,7 @@ func (g *Galleries) ImageUpload(w http.ResponseWriter, r *http.Request) {
 	// Verify user permission
 	user := context.User(r.Context())
 	if gallery.UserID != user.ID {
-		http.Error(w, "You do not have permission to edit this gallery", http.StatusForbidden)
+		handleUnknownError(err, w, "You do not have permission to edit this gallery", http.StatusForbidden)
 		return
 	}
 	var vd views.Data
@@ -272,7 +273,7 @@ func (g *Galleries) ImageDelete(w http.ResponseWriter, r *http.Request) {
 	// Verify user permission
 	user := context.User(r.Context())
 	if gallery.UserID != user.ID {
-		http.Error(w, "You do not have permission to edit this gallery", http.StatusForbidden)
+		handleUnknownError(err, w, "You do not have permission to edit this gallery", http.StatusForbidden)
 		return
 	}
 	// Get filename from web request path
@@ -296,6 +297,7 @@ func (g *Galleries) ImageDelete(w http.ResponseWriter, r *http.Request) {
 	url, err := g.r.Get(EditGallery).URL("id", fmt.Sprintf("%v", gallery.ID))
 	if err != nil {
 		http.Redirect(w, r, "/galleries", http.StatusFound)
+		log.Println(err)
 		return
 	}
 	http.Redirect(w, r, url.Path, http.StatusFound)

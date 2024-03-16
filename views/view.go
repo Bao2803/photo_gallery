@@ -3,6 +3,8 @@ package views
 import (
 	"bao2803/photo_gallery/context"
 	"bytes"
+	"errors"
+	"github.com/gorilla/csrf"
 	"html/template"
 	"io"
 	"log"
@@ -53,7 +55,13 @@ func NewView(layout string, files ...string) *View {
 	addTemplatePath(files)
 	addTemplateExt(files)
 	files = append(files, layoutFiles()...)
-	t, err := template.ParseFiles(files...)
+	// Create a stubbed version of the csrf function; this function is later replaced with a proper implementation
+	t, err := template.New("").Funcs(template.FuncMap{
+		"csrfField": func() (template.HTML, error) {
+			return "", errors.New("csrfField is not implemented") // if this stubbed function is called,
+			// it returns an error
+		},
+	}).ParseFiles(files...)
 	if err != nil {
 		panic(err)
 	}
@@ -70,6 +78,7 @@ type View struct {
 }
 
 func (v *View) Render(w http.ResponseWriter, r *http.Request, data interface{}) {
+	// Setting up header and data
 	w.Header().Set("Content-Type", "text/html")
 	var vd Data
 	switch d := data.(type) {
@@ -80,9 +89,18 @@ func (v *View) Render(w http.ResponseWriter, r *http.Request, data interface{}) 
 			Yield: data,
 		}
 	}
+	// User and temporary output for template
 	vd.User = context.User(r.Context()) // Lookup and set the user to the User field
 	var buf bytes.Buffer
-	err := v.Template.ExecuteTemplate(&buf, v.Layout, vd)
+	// Create the csrfField for http request
+	csrfField := csrf.TemplateField(r)
+	tpl := v.Template.Funcs(template.FuncMap{
+		"csrfField": func() template.HTML {
+			return csrfField
+		},
+	})
+	// Execute template, output to the created buffer
+	err := tpl.ExecuteTemplate(&buf, v.Layout, vd)
 	if err != nil {
 		http.Error(
 			w,
@@ -92,6 +110,7 @@ func (v *View) Render(w http.ResponseWriter, r *http.Request, data interface{}) 
 		log.Println(err)
 		return
 	}
+	// Copy buffer to client's writer
 	_, _ = io.Copy(w, &buf)
 }
 

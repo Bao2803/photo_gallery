@@ -12,4 +12,8 @@ require (
 	golang.org/x/crypto v0.19.0
 )
 
-require github.com/jinzhu/inflection v1.0.0 // indirect
+require (
+	github.com/gorilla/csrf v1.7.2 // indirect
+	github.com/gorilla/securecookie v1.1.2 // indirect
+	github.com/jinzhu/inflection v1.0.0 // indirect
+)

@@ -3,7 +3,9 @@ package main
 import (
 	"bao2803/photo_gallery/middleware"
 	"bao2803/photo_gallery/models"
+	"bao2803/photo_gallery/rand"
 	"fmt"
+	"github.com/gorilla/csrf"
 	"net/http"
 
 	"bao2803/photo_gallery/controllers"
@@ -46,9 +48,15 @@ func main() {
 	r.HandleFunc("/signup", usersC.Create).Methods("POST")
 	r.HandleFunc("/cookietest", usersC.CookieTest).Methods("GET")
 
-	// Middlewares for gallery
+	// Middlewares
 	userMw := middleware.User{UserService: services.User}
 	requireUserMw := middleware.RequireUser{}
+	isProd := false // TODO: to config file
+	b, err := rand.Bytes(32)
+	if err != nil {
+		panic(err)
+	}
+	csrfMw := csrf.Protect(b, csrf.Secure(isProd))
 
 	// Galleries routes
 	r.Handle("/galleries/new", requireUserMw.Apply(galleriesC.New)).
@@ -74,10 +82,15 @@ func main() {
 	r.HandleFunc("/galleries/{id:[0-9]+}/images/{filename}/delete", requireUserMw.ApplyFn(galleriesC.ImageDelete)).
 		Methods("POST")
 
+	// Assets
+	assetHandler := http.FileServer(http.Dir("./assets/"))
+	assetHandler = http.StripPrefix("/assets/", assetHandler)
+	r.PathPrefix("/assets/").Handler(assetHandler)
+
 	// Misc
 	r.Handle("/contact", staticC.Contact).Methods("GET")
 	r.Handle("/faq", staticC.Faq).Methods("GET")
 	r.NotFoundHandler = staticC.NotFound
 
-	http.ListenAndServe(":3000", userMw.Apply(r))
+	http.ListenAndServe(":3000", csrfMw(userMw.Apply(r)))
 }
