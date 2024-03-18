@@ -4,35 +4,64 @@ import (
 	"bao2803/photo_gallery/middleware"
 	"bao2803/photo_gallery/models"
 	"bao2803/photo_gallery/rand"
+	"encoding/json"
+	"flag"
 	"fmt"
 	"github.com/gorilla/csrf"
+	"log"
 	"net/http"
+	"os"
 
 	"bao2803/photo_gallery/controllers"
 
 	"github.com/gorilla/mux"
 )
 
-// TODO: move to config file
-const (
-	host     = "localhost"
-	port     = 5432
-	user     = "bao2803"
-	password = "bao28032003"
-	dbname   = "photo_gallery_dev"
-)
+func LoadConfig(configReq bool) Config {
+	// Open config file
+	f, err := os.Open(".config")
+	if err != nil {
+		fmt.Println("Using the default config...")
+		if configReq {
+			panic(err)
+		}
+		return DefaultConfig()
+	}
+	var c Config
+	dec := json.NewDecoder(f)
+	err = dec.Decode(&c)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Successfully loaded .config")
+	return c
+}
 
 func main() {
-	// Create a DB connection string and then use it to create our model services.
-	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s"+
-		" sslmode=disable", host, port, user, password, dbname)
-	services, err := models.NewServices(psqlInfo)
+	// Create config object for application
+	boolPtr := flag.Bool(
+		"prod",
+		false,
+		"Provide this flag in production. "+
+			"This ensures that a .config file is provided before the application starts.")
+	flag.Parse()
+	cfg := LoadConfig(*boolPtr)
+	dbCfg := cfg.Database
+
+	// Initialize services object, this contains all the services necessary for the application
+	services, err := models.NewServices(
+		models.WithGorm(dbCfg.Dialect(), dbCfg.ConnectionInfo()), // the 3 preceding depends on this
+		models.WithLogMode(!cfg.IsProd()),
+		models.WithUser(cfg.Pepper, cfg.HMACKey),
+		models.WithGallery(),
+		models.WithImage())
 	if err != nil {
 		panic(err)
 	}
 	defer services.Close()
 	services.AutoMigrate()
 
+	// Initiate router
 	r := mux.NewRouter()
 
 	// Controllers
@@ -51,12 +80,11 @@ func main() {
 	// Middlewares
 	userMw := middleware.User{UserService: services.User}
 	requireUserMw := middleware.RequireUser{}
-	isProd := false // TODO: to config file
 	b, err := rand.Bytes(32)
 	if err != nil {
 		panic(err)
 	}
-	csrfMw := csrf.Protect(b, csrf.Secure(isProd))
+	csrfMw := csrf.Protect(b, csrf.Secure(cfg.IsProd()))
 
 	// Galleries routes
 	r.Handle("/galleries/new", requireUserMw.Apply(galleriesC.New)).
@@ -92,5 +120,7 @@ func main() {
 	r.Handle("/faq", staticC.Faq).Methods("GET")
 	r.NotFoundHandler = staticC.NotFound
 
-	http.ListenAndServe(":3000", csrfMw(userMw.Apply(r)))
+	// Starting server
+	fmt.Printf("Starting the server on: http://localhost:%d/...\n", cfg.Port)
+	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", cfg.Port), csrfMw(userMw.Apply(r))))
 }

@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 )
@@ -23,7 +24,10 @@ func (i *Image) RelativePath() string {
 
 // Path is used to build the absolute path used to reference this image via web request.
 func (i *Image) Path() string {
-	return "/" + i.RelativePath()
+	temp := url.URL{
+		Path: "/" + i.RelativePath(), // escaped the path using the url type
+	}
+	return temp.String()
 }
 
 type ImageService interface {

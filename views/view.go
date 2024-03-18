@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"path/filepath"
 )
 
@@ -60,6 +61,9 @@ func NewView(layout string, files ...string) *View {
 		"csrfField": func() (template.HTML, error) {
 			return "", errors.New("csrfField is not implemented") // if this stubbed function is called,
 			// it returns an error
+		},
+		"pathEscape": func(s string) string {
+			return url.PathEscape(s)
 		},
 	}).ParseFiles(files...)
 	if err != nil {

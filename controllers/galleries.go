@@ -255,12 +255,19 @@ func (g *Galleries) ImageUpload(w http.ResponseWriter, r *http.Request) {
 			}
 		}()
 	}
-	// Success
-	vd.Alert = &views.Alert{
-		Level:   views.AlertLvlSuccess,
-		Message: "Images successfully uploaded!",
+	//// Success, render alert
+	//vd.Alert = &views.Alert{
+	//	Level:   views.AlertLvlSuccess,
+	//	Message: "Images successfully uploaded!",
+	//}
+	//g.EditView.Render(w, r, vd)
+	// Success, redirect user to edit gallery -> this will update the image list
+	url, err := g.r.Get(EditGallery).URL("id", fmt.Sprintf("%v", gallery.ID))
+	if err != nil {
+		http.Redirect(w, r, "/galleries", http.StatusFound)
+		return
 	}
-	g.EditView.Render(w, r, vd)
+	http.Redirect(w, r, url.Path, http.StatusFound)
 }
 
 // ImageDelete POST /galleries/:id/images/:filename/delete
